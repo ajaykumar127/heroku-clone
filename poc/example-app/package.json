@@ -1,0 +1,15 @@
+{
+  "name": "platform-example-app",
+  "version": "1.0.0",
+  "description": "Example Node.js app for Platform POC",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["platform", "paas", "heroku"],
+  "author": "Platform Team",
+  "license": "MIT"
+}

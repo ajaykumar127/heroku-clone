@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../api-design/DATABASE_SCHEMA.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-server:
+    build:
+      context: .
+      dockerfile: docker/api-server.Dockerfile
+    container_name: platform-api
+    environment:
+      DATABASE_URL: postgres://platform:platform_secret@postgres:5432/platform?sslmode=disable
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  git-server:
+    build:
+      context: .
+      dockerfile: docker/git-server.Dockerfile
+    container_name: platform-git
+    environment:
+      API_URL: http://api-server:8080
+    ports:
+      - "2222:2222"
+    depends_on:
+      - api-server
+    volumes:
+      - ./repos:/app/repos
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  registry:
+    image: registry:2
+    container_name: platform-registry
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  registry_data:
