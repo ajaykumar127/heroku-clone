@@ -5,16 +5,24 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	Port        string
-	Environment string
+	DatabaseURL    string
+	Port           string
+	Environment    string
+	ReposDir       string
+	BuilderScript  string
+	DeployerScript string
+	RegistryURL    string
 }
 
 func LoadConfig() *Config {
 	return &Config{
-		DatabaseURL: getEnv("DATABASE_URL", "./platform.db"),
-		Port:        getEnv("PORT", "8080"),
-		Environment: getEnv("ENVIRONMENT", "development"),
+		DatabaseURL:    getEnv("DATABASE_URL", "./platform.db"),
+		Port:           getEnv("PORT", "8080"),
+		Environment:    getEnv("ENVIRONMENT", "development"),
+		ReposDir:       getEnv("REPOS_DIR", "../git-server/repos"),
+		BuilderScript:  getEnv("BUILDER_SCRIPT", "../builder/builder.sh"),
+		DeployerScript: getEnv("DEPLOYER_SCRIPT", "../deployer/deploy.sh"),
+		RegistryURL:    getEnv("REGISTRY_URL", "localhost:5000"),
 	}
 }
 
