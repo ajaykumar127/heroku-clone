@@ -15,3 +15,9 @@ poc/logs/
 vendor/
 poc/api-server/api-server
 poc/git-server/api-server
+.claude/worktrees/
+runtime-plane/*/bin/
+runtime-plane/agent/runtime-agent
+runtime-plane/builder/builder
+runtime-plane/deployer/deployer
+control-plane/control-plane
