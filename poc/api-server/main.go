@@ -220,7 +220,7 @@ func (s *APIServer) handleListReleases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.db.Query(
-		fmt.Sprintf("SELECT id, app_id, version, commit, status, created_at FROM releases WHERE app_id = %s ORDER BY version DESC", bm.ph(1)),
+		fmt.Sprintf(`SELECT id, app_id, version, "commit", status, created_at FROM releases WHERE app_id = %s ORDER BY version DESC`, bm.ph(1)),
 		appID,
 	)
 	if err != nil {
@@ -346,7 +346,7 @@ func initDB(config *Config) (*sql.DB, error) {
 			id TEXT PRIMARY KEY,
 			app_id TEXT NOT NULL,
 			version INTEGER NOT NULL,
-			commit TEXT NOT NULL,
+			"commit" TEXT NOT NULL,
 			status TEXT NOT NULL,
 			build_output TEXT,
 			created_at TIMESTAMP NOT NULL,
@@ -379,7 +379,7 @@ func initDB(config *Config) (*sql.DB, error) {
 			id TEXT PRIMARY KEY,
 			app_id TEXT NOT NULL,
 			version INTEGER NOT NULL,
-			commit TEXT NOT NULL,
+			"commit" TEXT NOT NULL,
 			status TEXT NOT NULL,
 			build_output TEXT,
 			created_at TIMESTAMP NOT NULL,

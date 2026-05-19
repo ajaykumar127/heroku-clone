@@ -51,10 +51,11 @@ func (s *APIServer) initAuthSchema() error {
 // The /internal/ and /health routes are exempt.
 func (s *APIServer) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for internal webhook and health
+		// Skip auth for internal webhook, health, and token creation (bootstrap)
 		if strings.HasPrefix(r.URL.Path, "/internal/") ||
 			r.URL.Path == "/health" ||
-			r.URL.Path == "/" {
+			r.URL.Path == "/" ||
+			(r.URL.Path == "/v1/auth/tokens" && r.Method == http.MethodPost) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -86,12 +87,9 @@ func extractBearerToken(r *http.Request) string {
 
 func (s *APIServer) validateToken(token string) bool {
 	var id string
-	ph := "?"
-	if s.config.IsPostgres() {
-		ph = "$1"
-	}
 	err := s.db.QueryRow(
-		fmt.Sprintf("SELECT id FROM api_tokens WHERE token = %s", ph), token,
+		fmt.Sprintf("SELECT id FROM api_tokens WHERE token = %s", placeholder(s.config.IsPostgres(), 1)),
+		token,
 	).Scan(&id)
 	return err == nil
 }
@@ -110,8 +108,8 @@ func (s *APIServer) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 
 	id := generateID()
 	now := time.Now()
-	bm := NewBuildManager(s.db, s.config)
-	ph := func(n int) string { return bm.ph(n) }
+	pg := s.config.IsPostgres()
+	ph := func(n int) string { return placeholder(pg, n) }
 
 	_, err = s.db.Exec(
 		fmt.Sprintf(
@@ -158,10 +156,8 @@ func (s *APIServer) handleListTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
-	// Support delete by token value passed as query param for CLI convenience
 	token := r.URL.Query().Get("value")
-	bm := NewBuildManager(s.db, s.config)
-	ph := bm.ph(1)
+	ph := placeholder(s.config.IsPostgres(), 1)
 
 	var result sql.Result
 	var execErr error

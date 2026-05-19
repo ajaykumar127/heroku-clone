@@ -16,9 +16,9 @@ func (s *APIServer) handleGetConfigVars(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	bm := NewBuildManager(s.db, s.config)
+	pg := s.config.IsPostgres()
 	rows, err := s.db.Query(
-		fmt.Sprintf("SELECT key, value FROM config_vars WHERE app_id = %s", bm.ph(1)),
+		fmt.Sprintf("SELECT key, value FROM config_vars WHERE app_id = %s", placeholder(pg, 1)),
 		appID,
 	)
 	if err != nil {
@@ -55,16 +55,15 @@ func (s *APIServer) handleSetConfigVars(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	bm := NewBuildManager(s.db, s.config)
+	pg := s.config.IsPostgres()
 
 	for key, val := range incoming {
 		if key == "" {
 			continue
 		}
 		if val == nil {
-			// delete
 			s.db.Exec(
-				fmt.Sprintf("DELETE FROM config_vars WHERE app_id = %s AND key = %s", bm.ph(1), bm.ph(2)),
+				fmt.Sprintf("DELETE FROM config_vars WHERE app_id = %s AND key = %s", placeholder(pg, 1), placeholder(pg, 2)),
 				appID, key,
 			)
 			continue
@@ -122,10 +121,9 @@ func (s *APIServer) initConfigVarsSchema() error {
 // resolveApp looks up an app by name from the URL and returns its ID.
 func (s *APIServer) resolveApp(w http.ResponseWriter, r *http.Request) (string, bool) {
 	name := mux.Vars(r)["name"]
-	bm := NewBuildManager(s.db, s.config)
 	var appID string
 	err := s.db.QueryRow(
-		fmt.Sprintf("SELECT id FROM apps WHERE name = %s", bm.ph(1)), name,
+		fmt.Sprintf("SELECT id FROM apps WHERE name = %s", placeholder(s.config.IsPostgres(), 1)), name,
 	).Scan(&appID)
 	if err != nil {
 		http.Error(w, "app not found", http.StatusNotFound)

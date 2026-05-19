@@ -13,3 +13,5 @@ poc/logs/
 
 # Go
 vendor/
+poc/api-server/api-server
+poc/git-server/api-server

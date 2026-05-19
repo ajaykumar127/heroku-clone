@@ -214,69 +214,46 @@ git push platform main
                 document.getElementById('total-apps').textContent = apps.length;
 
                 if (apps.length === 0) {
-                    document.getElementById('apps-content').innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📦</div>
-                            <p>No applications yet</p>
-                            <p style="margin-top: 10px; font-size: 14px;">Create your first app using the API or CLI</p>
-                        </div>
-                    `;
+                    document.getElementById('apps-content').innerHTML =
+                        '<div class="empty-state">' +
+                        '<div class="empty-state-icon">&#128230;</div>' +
+                        '<p>No applications yet</p>' +
+                        '<p style="margin-top:10px;font-size:14px;">Create your first app using the API or CLI</p>' +
+                        '</div>';
                 } else {
                     let totalReleases = 0;
-                    const tableRows = await Promise.all(apps.map(async app => {
-                        const relResponse = await fetch(\`/v1/apps/\${app.name}/releases\`);
+                    const tableRows = await Promise.all(apps.map(async function(app) {
+                        const relResponse = await fetch('/v1/apps/' + app.name + '/releases');
                         const releases = await relResponse.json();
                         totalReleases += releases.length;
-
-                        return \`
-                            <tr>
-                                <td><div class="app-name">\${app.name}</div></td>
-                                <td><div class="app-url"><a href="\${app.web_url}" target="_blank">\${app.web_url}</a></div></td>
-                                <td><div class="app-url">\${app.git_url}</div></td>
-                                <td>\${releases.length} releases</td>
-                                <td>\${new Date(app.created_at).toLocaleDateString()}</td>
-                            </tr>
-                        \`;
+                        return '<tr>' +
+                            '<td><div class="app-name">' + app.name + '</div></td>' +
+                            '<td><div class="app-url"><a href="' + app.web_url + '" target="_blank">' + app.web_url + '</a></div></td>' +
+                            '<td><div class="app-url">' + app.git_url + '</div></td>' +
+                            '<td>' + releases.length + ' releases</td>' +
+                            '<td>' + new Date(app.created_at).toLocaleDateString() + '</td>' +
+                            '</tr>';
                     }));
 
                     document.getElementById('total-releases').textContent = totalReleases;
-
-                    document.getElementById('apps-content').innerHTML = \`
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Web URL</th>
-                                    <th>Git URL</th>
-                                    <th>Releases</th>
-                                    <th>Created</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                \${tableRows.join('')}
-                            </tbody>
-                        </table>
-                    \`;
+                    document.getElementById('apps-content').innerHTML =
+                        '<table><thead><tr>' +
+                        '<th>Name</th><th>Web URL</th><th>Git URL</th><th>Releases</th><th>Created</th>' +
+                        '</tr></thead><tbody>' + tableRows.join('') + '</tbody></table>';
                 }
             } catch (error) {
-                document.getElementById('apps-content').innerHTML = \`
-                    <div class="empty-state">
-                        <div class="empty-state-icon">⚠️</div>
-                        <p>Failed to load applications</p>
-                        <p style="margin-top: 10px; font-size: 14px; color: #e53e3e;">\${error.message}</p>
-                    </div>
-                \`;
+                document.getElementById('apps-content').innerHTML =
+                    '<div class="empty-state">' +
+                    '<div class="empty-state-icon">&#9888;</div>' +
+                    '<p>Failed to load applications</p>' +
+                    '<p style="margin-top:10px;font-size:14px;color:#e53e3e;">' + error.message + '</p>' +
+                    '</div>';
             }
         }
 
-        function refreshApps() {
-            loadApps();
-        }
+        function refreshApps() { loadApps(); }
 
-        // Load apps on page load
         loadApps();
-
-        // Auto-refresh every 10 seconds
         setInterval(loadApps, 10000);
     </script>
 </body>

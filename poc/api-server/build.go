@@ -7,8 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type BuildManager struct {
@@ -24,10 +22,7 @@ func NewBuildManager(db *sql.DB, config *Config) *BuildManager {
 // ph returns the SQL placeholder for position n (1-based).
 // Postgres uses $1,$2,...; SQLite uses ?.
 func (bm *BuildManager) ph(n int) string {
-	if bm.postgres {
-		return fmt.Sprintf("$%d", n)
-	}
-	return "?"
+	return placeholder(bm.postgres, n)
 }
 
 // TriggerBuild runs the build+deploy pipeline asynchronously.
@@ -59,11 +54,11 @@ func (bm *BuildManager) createRelease(appID, commit string) (string, int, error)
 		return "", 0, err
 	}
 
-	id := uuid.New().String()
+	id := generateID()
 	now := time.Now()
 	_, err = bm.db.Exec(
 		fmt.Sprintf(
-			`INSERT INTO releases (id, app_id, version, commit, status, build_output, created_at)
+			`INSERT INTO releases (id, app_id, version, "commit", status, build_output, created_at)
 			 VALUES (%s, %s, %s, %s, 'building', '', %s)`,
 			bm.ph(1), bm.ph(2), bm.ph(3), bm.ph(4), bm.ph(5),
 		),
