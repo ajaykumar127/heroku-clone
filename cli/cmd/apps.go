@@ -52,8 +52,13 @@ var appsCreateCmd = &cobra.Command{
 	Short: "Create a new app",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		body := map[string]string{"name": args[0]}
+		if runtime, _ := cmd.Flags().GetString("runtime"); runtime != "" {
+			body["runtime"] = runtime
+		}
+
 		client := newClient()
-		resp, err := client.do("POST", "/v1/apps", map[string]string{"name": args[0]})
+		resp, err := client.do("POST", "/v1/apps", body)
 		if err != nil {
 			return err
 		}
@@ -98,6 +103,7 @@ var appsDestroyCmd = &cobra.Command{
 }
 
 func init() {
+	appsCreateCmd.Flags().StringP("runtime", "r", "", "Runtime plane to deploy to (e.g. aws-us-east-1)")
 	appsDestroyCmd.Flags().Bool("confirm", false, "Confirm destruction")
 	appsCmd.AddCommand(appsListCmd, appsCreateCmd, appsDestroyCmd)
 	rootCmd.AddCommand(appsCmd)

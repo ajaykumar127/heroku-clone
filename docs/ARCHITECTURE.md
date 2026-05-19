@@ -1,8 +1,147 @@
-# Cloud-Agnostic PaaS Platform - Technical Architecture
+# Cloud-Agnostic PaaS Architecture
 
-## Executive Summary
+## Overview
 
-This document outlines the architecture for a Heroku-like Platform-as-a-Service (PaaS) that can run on any public cloud provider (AWS, GCP, Azure) or on-premises infrastructure. The platform prioritizes developer experience, portability, and operational simplicity.
+This platform is a Heroku-style PaaS that runs on any public cloud or on-premises infrastructure. Unlike Heroku, which is locked to a single cloud, this platform separates the **Control Plane** (runs once, anywhere — manages apps, auth, and job dispatch) from **Runtime Planes** (one per cloud/region — handle builds, deployments, and traffic). Developers interact with one API and one CLI regardless of which cloud their app ultimately runs on. The Control Plane schedules work to whichever Runtime Plane is best suited for each app, and Runtime Agents on each cluster poll for jobs independently, so no direct inbound connectivity to the Control Plane is required from the cloud networks.
+
+## Architecture Diagram (ASCII)
+
+```
+Developer Tools (CLI / Git Push / Dashboard)
+            │
+    ┌───────▼────────┐
+    │  Control Plane │  ← runs once, anywhere
+    │  ─────────────│
+    │  API Server    │
+    │  Job Queue     │
+    │  App Registry  │
+    │  Auth          │
+    └───────┬────────┘
+            │  HTTP (job polling)
+    ┌───────┴──────────────────────────────┐
+    │              │                       │
+┌───▼────┐  ┌─────▼─────┐  ┌─────────────▼──┐
+│AWS EKS │  │ GCP GKE   │  │  Azure AKS     │
+│+ ECR   │  │ + GAR     │  │  + ACR         │
+│Runtime │  │ Runtime   │  │  Runtime Agent │
+│ Agent  │  │  Agent    │  │                │
+└────────┘  └───────────┘  └────────────────┘
+```
+
+## Components
+
+### Control Plane
+
+- **API Server** (Go/Gin): All REST endpoints, auth, app/release management. Exposes `GET /v1/apps`, `POST /v1/apps`, `GET /v1/runtimes`, `POST /internal/runtime/register`, and all other platform APIs.
+- **Job Queue**: DB-backed queue (Postgres), polled by Runtime Agents every 5 seconds. Jobs include `build`, `deploy`, and `release` tasks.
+- **Runtime Registry**: Tracks all registered Runtime Planes including cloud provider, region, health status, and last-seen timestamp. Supports manual registration via `POST /internal/runtime/register` and automatic registration when an agent starts up.
+- **Scheduler**: Selects which Runtime Plane handles each deploy using a least-recently-used (LRU) policy, with per-app affinity so repeat deploys land on the same runtime unless overridden by `--runtime`.
+
+### Runtime Plane
+
+- **Runtime Agent** (Go): Registers with the Control Plane on startup, polls the Job Queue for pending work, drives the build and deploy pipeline, and reports results back via the Control Plane API.
+- **Builder** (Go + CNB): Clones the application repo, runs Cloud Native Buildpacks (Paketo), and pushes the resulting OCI image to the cloud-specific container registry.
+- **Deployer** (Go + kubectl): Generates and applies Kubernetes manifests (Deployment, Service, Ingress) to the local cluster. Handles rolling updates and reports status back to the Control Plane.
+- **Container Registry**: ECR (AWS) / Artifact Registry (GCP) / ACR (Azure). Each Runtime Plane uses its cloud's native registry; the agent is pre-authorized at startup via cloud IAM.
+- **Nginx Ingress**: Routes HTTP/HTTPS traffic to application pods within the cluster. SSL certificates are managed by cert-manager and Let's Encrypt.
+
+## Communication Flow
+
+1. Developer runs `git push platform main`. The Git server authenticates the push and enqueues a `build` job in the Control Plane Job Queue.
+2. The Control Plane Scheduler selects a target Runtime Plane (using per-app preference or LRU fallback) and tags the job with the runtime ID.
+3. The Runtime Agent on the selected cluster polls `GET /internal/jobs/next` and picks up the build job.
+4. The Agent's Builder clones the source, runs CNB buildpacks, produces an OCI image, and pushes it to the cluster's container registry.
+5. The Agent marks the build complete and the Control Plane creates a new Release record (image digest + config vars = release vN).
+6. A `deploy` job is enqueued and immediately picked up by the same Runtime Agent.
+7. The Agent's Deployer generates a Kubernetes Deployment manifest pointing to the new image, applies it via kubectl, and waits for the rolling update to complete.
+8. Once all pods pass health checks, the Nginx Ingress routes traffic to the new pods and old pods are drained.
+9. The Agent reports success to the Control Plane. The release is marked active and build logs are stored.
+10. The developer sees a success message in their terminal and the app is live at `https://<app-name>.platform.example.com`.
+
+## Directory Structure
+
+```
+heroku-clone/
+├── api-design/
+│   ├── API_SCHEMA.md          # Full REST API specification (OpenAPI-compatible)
+│   └── DATABASE_SCHEMA.sql    # PostgreSQL schema for Control Plane metadata
+├── cli/
+│   ├── cmd/
+│   │   ├── root.go            # CLI root command, global flags, config loading
+│   │   ├── apps.go            # platform apps list/create/destroy
+│   │   ├── auth.go            # platform login/logout/whoami
+│   │   ├── client.go          # HTTP API client used by all commands
+│   │   ├── config.go          # platform config set/get/unset
+│   │   ├── releases.go        # platform releases list/rollback
+│   │   └── runtime.go         # platform runtime list/register/deregister
+│   ├── main.go                # CLI entry point
+│   ├── go.mod
+│   └── go.sum
+├── docs/
+│   ├── ARCHITECTURE.md        # This document
+│   ├── IMPLEMENTATION_GUIDE.md
+│   ├── OPEN_SOURCE_ANALYSIS.md
+│   └── QUICK_REFERENCE.md
+├── infra/
+│   ├── aws/                   # Terraform for AWS (EKS + ECR + VPC)
+│   ├── gcp/                   # Terraform for GCP (GKE + Artifact Registry + VPC)
+│   ├── azure/                 # Terraform for Azure (AKS + ACR + VNet)
+│   └── README.md              # Infra provisioning guide
+├── poc/
+│   ├── api-server/            # Proof-of-concept Go API server
+│   ├── git-server/            # Proof-of-concept Go Git server
+│   ├── builder/               # Buildpack runner shell scripts
+│   ├── deployer/              # Kubernetes deployment shell scripts
+│   ├── example-app/           # Sample Node.js application
+│   └── scripts/               # Deployment helper scripts
+└── README.md                  # Project overview and quick start
+```
+
+## Cloud Support
+
+| Feature            | AWS                          | GCP                          | Azure                        |
+|--------------------|------------------------------|------------------------------|------------------------------|
+| Kubernetes         | EKS (Elastic Kubernetes)     | GKE (Google Kubernetes)      | AKS (Azure Kubernetes)       |
+| Container Registry | ECR (Elastic Container Reg.) | Artifact Registry (GAR)      | ACR (Azure Container Reg.)   |
+| IAM / Auth         | IAM Roles for Service Accts  | Workload Identity            | Azure Managed Identity       |
+| Infra-as-Code      | Terraform aws provider       | Terraform google provider    | Terraform azurerm provider   |
+| Load Balancer      | AWS Load Balancer Controller | GCP L7 Load Balancer         | Azure Application Gateway    |
+| Object Storage     | S3                           | Cloud Storage (GCS)          | Azure Blob Storage           |
+
+## Developer Experience
+
+### Quick Start
+
+```bash
+# 1. Install the CLI (build from source)
+cd cli && go build -o platform . && mv platform /usr/local/bin/
+
+# 2. Authenticate against the Control Plane
+platform login --api-url https://api.platform.example.com
+
+# 3. Create an app (optionally pin it to a specific runtime)
+platform apps create my-app --runtime aws-us-east-1
+
+# 4. Add the git remote and deploy
+git remote add platform $(platform apps list | grep my-app | awk '{print $2}')
+git push platform main
+
+# 5. Check logs
+platform logs --tail -a my-app
+
+# 6. Scale up
+platform ps:scale web=3 -a my-app
+
+# 7. Roll back if something goes wrong
+platform releases -a my-app
+platform rollback v4 -a my-app
+```
+
+---
+
+<!-- The original detailed architecture reference is preserved below. -->
+
+## Original Architecture Reference
 
 ## Design Principles
 
