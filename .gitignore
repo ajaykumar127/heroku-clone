@@ -1,0 +1,17 @@
+# Binaries
+poc/api-server/bin/
+poc/git-server/bin/
+cli/bin/
+*.db
+ssh_host_key
+ssh_host_key.pub
+
+# Build artifacts
+/tmp/builds/
+poc/repos/
+poc/logs/
+
+# Go
+vendor/
+poc/api-server/api-server
+poc/git-server/api-server

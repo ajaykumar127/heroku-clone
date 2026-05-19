@@ -27,6 +27,10 @@ services:
     environment:
       DATABASE_URL: postgres://platform:platform_secret@postgres:5432/platform?sslmode=disable
       PORT: 8080
+      REPOS_DIR: /app/repos
+      BUILDER_SCRIPT: /app/builder/builder.sh
+      DEPLOYER_SCRIPT: /app/deployer/deploy.sh
+      REGISTRY_URL: registry:5000
     ports:
       - "8080:8080"
     depends_on:
@@ -34,6 +38,9 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - ./repos:/app/repos
+      - ./builder:/app/builder
+      - ./deployer:/app/deployer
     restart: unless-stopped
 
   git-server:
