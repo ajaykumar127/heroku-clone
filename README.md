@@ -8,6 +8,31 @@ git push platform main   # that's it
 
 ---
 
+## Deploy to AWS in one command
+
+```bash
+git clone https://github.com/ajaykumar127/heroku-clone.git
+cd heroku-clone
+make deploy-aws
+```
+
+That's it. The script checks your prerequisites, builds the binaries, starts the Control Plane, provisions an EKS cluster with Terraform, and waits for the Runtime Agent to register. When it finishes (~15 min) you'll see exactly what to do next.
+
+**Options:**
+
+```bash
+# Different region or instance type
+PLATFORM_AWS_REGION=eu-west-1 PLATFORM_NODE_TYPE=t3.large make deploy-aws
+
+# Tear everything down
+make destroy-aws
+```
+
+> **Prerequisites** (install before running): `go`, `terraform`, `aws` CLI (configured with `aws configure`), `kubectl`
+> All installable via `brew install go terraform awscli kubectl`
+
+---
+
 ## What is this?
 
 Platform is an open-source Heroku-style PaaS you host yourself. It separates into two planes:
@@ -65,7 +90,10 @@ heroku-clone/
 
 ---
 
-## Getting Started — AWS (Step by Step)
+## Getting Started — AWS (Manual Steps)
+
+> The `make deploy-aws` command above runs all of these automatically.
+> Read this section if you want to understand what it does or run steps individually.
 
 This guide takes you from zero to a working platform on AWS EKS in about 30 minutes. You will end up with:
 
