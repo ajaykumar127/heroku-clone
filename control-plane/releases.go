@@ -80,11 +80,20 @@ func (s *APIServer) handleCreateRelease(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if err := validateCommitSHA(req.Commit); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
 	releaseID, jobID, err := s.buildManager.TriggerBuild(name, req.Commit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	auditLog(r, "release.create", name, req.Commit)
 
 	resp := map[string]string{
 		"release_id": releaseID,

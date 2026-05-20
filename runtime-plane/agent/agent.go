@@ -55,6 +55,27 @@ type statusUpdate struct {
 	LogOutput string `json:"log_output"`
 }
 
+// setInternalSecret adds the X-Internal-Secret header to req if the secret is configured.
+func (a *Agent) setInternalSecret(req *http.Request) {
+	if a.config.InternalAPISecret != "" {
+		req.Header.Set("X-Internal-Secret", a.config.InternalAPISecret)
+	}
+}
+
+// newInternalRequest creates an HTTP request for an /internal/ endpoint and
+// attaches the shared-secret header when configured.
+func (a *Agent) newInternalRequest(method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	a.setInternalSecret(req)
+	return req, nil
+}
+
 // Register POSTs to /internal/runtime/register and stores the returned runtime ID.
 // Retries up to 10 times with 5s backoff before giving up.
 func (a *Agent) Register() error {
@@ -74,7 +95,11 @@ func (a *Agent) Register() error {
 
 	const maxAttempts = 10
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := a.client.Post(url, "application/json", bytes.NewReader(body))
+		req, err := a.newInternalRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create register request: %w", err)
+		}
+		resp, err := a.client.Do(req)
 		if err != nil {
 			log.Printf("Register attempt %d/%d failed (network): %v", attempt, maxAttempts, err)
 		} else {
@@ -138,7 +163,11 @@ func (a *Agent) Run(ctx context.Context) {
 // poll calls GET /internal/runtime/{id}/jobs and returns the list of pending jobs.
 func (a *Agent) poll() ([]Job, error) {
 	url := fmt.Sprintf("%s/internal/runtime/%s/jobs", a.config.ControlPlaneURL, a.runtimeID)
-	resp, err := a.client.Get(url)
+	req, err := a.newInternalRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create poll request: %w", err)
+	}
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", url, err)
 	}
@@ -214,7 +243,11 @@ func (a *Agent) reportStatus(jobID, status, logOutput string) error {
 	url := fmt.Sprintf("%s/internal/runtime/%s/jobs/%s/status",
 		a.config.ControlPlaneURL, a.runtimeID, jobID)
 
-	resp, err := a.client.Post(url, "application/json", bytes.NewReader(body))
+	req, err := a.newInternalRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create status request: %w", err)
+	}
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", url, err)
 	}
@@ -234,7 +267,7 @@ func (a *Agent) sendHeartbeat() {
 
 	for range ticker.C {
 		url := fmt.Sprintf("%s/internal/runtime/%s/heartbeat", a.config.ControlPlaneURL, a.runtimeID)
-		req, err := http.NewRequest(http.MethodPatch, url, nil)
+		req, err := a.newInternalRequest(http.MethodPatch, url, nil)
 		if err != nil {
 			log.Printf("Heartbeat: create request error: %v", err)
 			continue

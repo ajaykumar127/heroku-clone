@@ -14,24 +14,28 @@ import (
 )
 
 type APIServer struct {
-	db           *sql.DB
-	router       *mux.Router
-	config       *Config
-	buildManager *BuildManager
+	db             *sql.DB
+	router         *mux.Router
+	config         *Config
+	buildManager   *BuildManager
+	internalSecret string
 }
 
 func NewAPIServer(db *sql.DB, config *Config) *APIServer {
 	s := &APIServer{
-		db:           db,
-		router:       mux.NewRouter(),
-		config:       config,
-		buildManager: NewBuildManager(db, config),
+		db:             db,
+		router:         mux.NewRouter(),
+		config:         config,
+		buildManager:   NewBuildManager(db, config),
+		internalSecret: config.InternalSecret,
 	}
 
 	// Add middleware
 	s.router.Use(mux.MiddlewareFunc(LoggingMiddleware))
 	s.router.Use(mux.MiddlewareFunc(CORSMiddleware))
 	s.router.Use(mux.MiddlewareFunc(RecoveryMiddleware))
+	s.router.Use(mux.MiddlewareFunc(RateLimitMiddleware))
+	s.router.Use(mux.MiddlewareFunc(MaxBodyMiddleware))
 	s.router.Use(s.AuthMiddleware)
 
 	s.routes()
@@ -58,6 +62,11 @@ func (s *APIServer) routes() {
 	s.router.HandleFunc("/v1/auth/tokens", s.handleListTokens).Methods("GET")
 	s.router.HandleFunc("/v1/auth/tokens", s.handleDeleteToken).Methods("DELETE")
 
+	// SSH keys (user-facing)
+	s.router.HandleFunc("/v1/auth/ssh-keys", s.handleAddSSHKey).Methods("POST")
+	s.router.HandleFunc("/v1/auth/ssh-keys", s.handleListSSHKeys).Methods("GET")
+	s.router.HandleFunc("/v1/auth/ssh-keys/{id}", s.handleDeleteSSHKey).Methods("DELETE")
+
 	// Build logs (snapshot)
 	s.router.HandleFunc("/v1/apps/{name}/releases/{release_id}/logs", s.handleReleaseLogs).Methods("GET")
 	// Build logs (streaming SSE)
@@ -77,6 +86,10 @@ func (s *APIServer) routes() {
 	s.router.HandleFunc("/internal/runtime/{id}/heartbeat", s.handleRuntimeHeartbeat).Methods("PATCH")
 	s.router.HandleFunc("/internal/runtime/{runtime_id}/jobs", s.handlePollJobs).Methods("GET")
 	s.router.HandleFunc("/internal/runtime/{runtime_id}/jobs/{job_id}/status", s.handleUpdateJobStatus).Methods("POST")
+
+	// Internal: git server endpoints (protected by X-Internal-Secret)
+	s.router.HandleFunc("/internal/ssh-keys/verify", s.handleVerifySSHKey).Methods("GET")
+	s.router.HandleFunc("/internal/apps/{name}/check-access", s.handleCheckAppAccess).Methods("GET")
 }
 
 func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +275,9 @@ func main() {
 	log.Printf("Database: %s", maskDatabaseURL(config.DatabaseURL))
 	log.Printf("Port: %s", config.Port)
 	log.Printf("Git Server: %s:%s", config.GitServerHost, config.GitServerPort)
+	if config.InternalSecret == "" {
+		log.Println("[WARN] INTERNAL_API_SECRET not set — /internal/ routes are unauthenticated")
+	}
 
 	db, err := initDB(config)
 	if err != nil {
@@ -285,6 +301,11 @@ func main() {
 		log.Fatal("Failed to initialize config vars schema:", err)
 	}
 	log.Println("Config vars schema ready")
+
+	if err := server.initSSHKeysSchema(); err != nil {
+		log.Fatal("Failed to initialize SSH keys schema:", err)
+	}
+	log.Println("SSH keys schema ready")
 
 	addr := ":" + config.Port
 	log.Printf("Control Plane API listening on %s", addr)

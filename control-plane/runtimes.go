@@ -90,6 +90,8 @@ func (s *APIServer) handleRegisterRuntime(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	auditLog(r, "runtime.register", req.Name, req.Cloud+"/"+req.Region)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(rt)

@@ -56,6 +56,13 @@ func (s *APIServer) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateAppName(req.Name); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
 	pg := s.config.IsPostgres()
 	ph := func(n int) string { return placeholder(pg, n) }
 
@@ -76,6 +83,8 @@ func (s *APIServer) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	auditLog(r, "app.create", app.Name, "")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -127,5 +136,68 @@ func (s *APIServer) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditLog(r, "app.destroy", name, "")
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCheckAppAccess is the internal endpoint used by the git server to verify
+// that a given token_id is allowed to access the named app.
+// For this single-tenant POC any valid token grants access to any app that exists.
+// GET /internal/apps/{name}/check-access?token_id=xxx
+// Returns 200 if allowed, 403 if the token is unknown, 404 if the app doesn't exist.
+func (s *APIServer) handleCheckAppAccess(w http.ResponseWriter, r *http.Request) {
+	// Validate internal secret if configured.
+	secret := s.config.InternalSecret
+	if secret != "" {
+		if r.Header.Get("X-Internal-Secret") != secret {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+	}
+
+	vars := mux.Vars(r)
+	appName := vars["name"]
+	tokenID := r.URL.Query().Get("token_id")
+
+	if appName == "" || tokenID == "" {
+		http.Error(w, `{"error":"app name and token_id are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	pg := s.config.IsPostgres()
+	ph := func(n int) string { return placeholder(pg, n) }
+
+	// Verify the app exists.
+	var appID string
+	err := s.db.QueryRow(
+		fmt.Sprintf("SELECT id FROM apps WHERE name = %s", ph(1)),
+		appName,
+	).Scan(&appID)
+	if err == sql.ErrNoRows {
+		http.Error(w, `{"error":"app not found"}`, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Verify the token exists (single-tenant: any valid token may access any app).
+	var id string
+	err = s.db.QueryRow(
+		fmt.Sprintf("SELECT id FROM api_tokens WHERE id = %s", ph(1)),
+		tokenID,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		http.Error(w, `{"error":"access denied"}`, http.StatusForbidden)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

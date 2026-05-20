@@ -14,6 +14,7 @@ type Config struct {
 	RegistryURL    string
 	GitServerHost  string
 	GitServerPort  string
+	InternalSecret string
 }
 
 func LoadConfig() *Config {
@@ -27,6 +28,7 @@ func LoadConfig() *Config {
 		RegistryURL:    getEnv("REGISTRY_URL", "localhost:5000"),
 		GitServerHost:  getEnv("GIT_SERVER_HOST", "localhost"),
 		GitServerPort:  getEnv("GIT_SERVER_PORT", "2222"),
+		InternalSecret: getEnv("INTERNAL_API_SECRET", ""),
 	}
 }
 

@@ -72,3 +72,9 @@ variable "environment" {
     error_message = "environment must be one of: production, staging, development."
   }
 }
+
+variable "agent_image_tag" {
+  description = "Runtime agent container image tag. Pin to a specific version tag — never use :latest in production."
+  type        = string
+  default     = "v0.1.0"
+}

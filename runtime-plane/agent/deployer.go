@@ -7,14 +7,34 @@ import (
 	"strings"
 )
 
+// sanitizeName ensures a Kubernetes name contains only [a-z0-9-] characters,
+// replacing any invalid character with '-'.
+func sanitizeName(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			b.WriteRune(c)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
 // Deploy applies a Deployment, Service, and Ingress for the app using kubectl apply -f -.
 // Returns combined kubectl output as a string.
 func Deploy(cfg *Config, job Job, replicas int) (string, error) {
 	var out bytes.Buffer
 
-	namespace := cfg.AppsNamespace
-	appName := job.AppName
+	namespace := sanitizeName(cfg.AppsNamespace)
+	appName := sanitizeName(job.AppName)
+	// Docker image references have a defined format; strip any whitespace/newlines
+	// by taking only the first whitespace-delimited token.
 	image := job.ImageName
+	if fields := strings.Fields(image); len(fields) > 0 {
+		image = fields[0]
+	}
 	port := 8080
 
 	fmt.Fprintf(&out, "=====> Deploying application: %s\n", appName)

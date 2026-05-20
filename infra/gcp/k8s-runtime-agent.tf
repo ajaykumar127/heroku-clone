@@ -87,13 +87,29 @@ resource "kubernetes_deployment" "runtime_agent" {
 
       spec {
         service_account_name            = kubernetes_service_account.runtime_agent.metadata[0].name
-        automount_service_account_token = true
+        automount_service_account_token = false
+
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 65534
+          run_as_group    = 65534
+          fs_group        = 65534
+        }
 
         container {
           name  = "runtime-agent"
-          image = "${local.registry_url}/runtime-agent:latest"
+          image = "${local.registry_url}/runtime-agent:${var.agent_image_tag}"
 
           image_pull_policy = "Always"
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
 
           env {
             name  = "RUNTIME_NAME"
@@ -136,6 +152,11 @@ resource "kubernetes_deployment" "runtime_agent" {
             }
           }
 
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
+          }
+
           liveness_probe {
             http_get {
               path = "/healthz"
@@ -153,6 +174,11 @@ resource "kubernetes_deployment" "runtime_agent" {
             initial_delay_seconds = 5
             period_seconds        = 10
           }
+        }
+
+        volume {
+          name = "tmp"
+          empty_dir {}
         }
       }
     }

@@ -61,6 +61,20 @@ func (s *APIServer) handleSetConfigVars(w http.ResponseWriter, r *http.Request) 
 		if key == "" {
 			continue
 		}
+		if err := validateConfigKey(key); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		if val != nil {
+			if err := validateConfigValue(*val); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		if val == nil {
 			s.db.Exec(
 				fmt.Sprintf("DELETE FROM config_vars WHERE app_id = %s AND key = %s", placeholder(pg, 1), placeholder(pg, 2)),
@@ -85,6 +99,8 @@ func (s *APIServer) handleSetConfigVars(w http.ResponseWriter, r *http.Request) 
 			)
 		}
 	}
+
+	auditLog(r, "config.set", mux.Vars(r)["name"], fmt.Sprintf("%d keys", len(incoming)))
 
 	// Return the full updated config
 	s.handleGetConfigVars(w, r)

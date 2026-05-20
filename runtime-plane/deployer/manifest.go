@@ -14,6 +14,43 @@ type DeployRequest struct {
 	EnvVars  map[string]string `json:"env_vars"`
 }
 
+// yamlStringValue returns a YAML-safe single-quoted string value.
+// Single-quoted YAML strings treat everything literally except '' (escaped single quote).
+func yamlStringValue(s string) string {
+	// Replace each single quote with two single quotes (YAML escaping)
+	escaped := strings.ReplaceAll(s, "'", "''")
+	return "'" + escaped + "'"
+}
+
+// sanitizeEnvKey ensures an env var key contains only [A-Z0-9_] characters,
+// replacing any invalid character with '_' as a last-resort safety net.
+func sanitizeEnvKey(k string) string {
+	var b strings.Builder
+	for _, c := range strings.ToUpper(k) {
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			b.WriteRune(c)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
+}
+
+// sanitizeName ensures a Kubernetes name contains only [a-z0-9-] characters,
+// replacing any invalid character with '-'.
+func sanitizeName(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			b.WriteRune(c)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
 // GenerateManifest returns the combined YAML for Deployment + Service + Ingress,
 // separated by "---".
 func GenerateManifest(cfg *Config, req DeployRequest) string {
@@ -24,6 +61,16 @@ func GenerateManifest(cfg *Config, req DeployRequest) string {
 	replicas := req.Replicas
 	if replicas == 0 {
 		replicas = 1
+	}
+
+	// Sanitize user-supplied strings interpolated into YAML structure positions.
+	appName := sanitizeName(req.AppName)
+	namespace := sanitizeName(cfg.Namespace)
+	// Docker image references have a defined format; strip any whitespace/newlines
+	// by taking only the first whitespace-delimited token.
+	image := req.Image
+	if fields := strings.Fields(image); len(fields) > 0 {
+		image = fields[0]
 	}
 
 	envBlock := buildEnvBlock(req.EnvVars, port)
@@ -50,12 +97,24 @@ spec:
       labels:
         app: %s
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
       containers:
       - name: web
         image: %s
         ports:
         - containerPort: %d
           name: http
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
 %s        resources:
           requests:
             cpu: "100m"
@@ -75,11 +134,11 @@ spec:
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5`,
-		req.AppName, cfg.Namespace, req.AppName,
+		appName, namespace, appName,
 		replicas,
-		req.AppName,
-		req.AppName,
-		req.Image,
+		appName,
+		appName,
+		image,
 		port,
 		envBlock,
 	)
@@ -100,7 +159,7 @@ spec:
     name: http
   selector:
     app: %s`,
-		req.AppName, cfg.Namespace, req.AppName, req.AppName,
+		appName, namespace, appName, appName,
 	)
 
 	ingress := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
@@ -125,10 +184,10 @@ spec:
             name: %s
             port:
               number: 80`,
-		req.AppName, cfg.Namespace, req.AppName,
+		appName, namespace, appName,
 		cfg.IngressClass,
-		req.AppName, cfg.AppsDomain,
-		req.AppName,
+		appName, cfg.AppsDomain,
+		appName,
 	)
 
 	return strings.Join([]string{deployment, service, ingress}, "\n---\n")
@@ -143,7 +202,7 @@ func buildEnvBlock(envVars map[string]string, port int) string {
 	sb.WriteString("        env:\n")
 	sb.WriteString(fmt.Sprintf("        - name: PORT\n          value: \"%d\"\n", port))
 	for k, v := range envVars {
-		sb.WriteString(fmt.Sprintf("        - name: %s\n          value: %q\n", k, v))
+		sb.WriteString(fmt.Sprintf("        - name: %s\n          value: %s\n", sanitizeEnvKey(k), yamlStringValue(v)))
 	}
 	return sb.String()
 }

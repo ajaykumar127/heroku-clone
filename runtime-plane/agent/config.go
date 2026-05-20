@@ -27,6 +27,9 @@ type Config struct {
 
 	// Kubernetes namespace for deployed apps
 	AppsNamespace string // APPS_NAMESPACE, default: "platform-apps"
+
+	// Shared secret for /internal/ routes on the control plane
+	InternalAPISecret string // INTERNAL_API_SECRET
 }
 
 // LoadConfig reads configuration from environment variables, applying defaults where appropriate.
@@ -40,8 +43,9 @@ func LoadConfig() *Config {
 		RegistryURL:     getEnv("REGISTRY_URL", "localhost:5000"),
 		BuilderScript:   getEnv("BUILDER_SCRIPT", "/app/builder/builder.sh"),
 		DeployerScript:  getEnv("DEPLOYER_SCRIPT", "/app/deployer/deploy.sh"),
-		AppsNamespace:   getEnv("APPS_NAMESPACE", "platform-apps"),
-		PollInterval:    parseDuration(getEnv("POLL_INTERVAL", "5s"), 5*time.Second),
+		AppsNamespace:     getEnv("APPS_NAMESPACE", "platform-apps"),
+		PollInterval:      parseDuration(getEnv("POLL_INTERVAL", "5s"), 5*time.Second),
+		InternalAPISecret: getEnv("INTERNAL_API_SECRET", ""),
 	}
 	return cfg
 }

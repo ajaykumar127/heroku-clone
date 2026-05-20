@@ -67,3 +67,9 @@ variable "master_authorized_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "agent_image_tag" {
+  description = "Runtime agent container image tag. Pin to a specific version tag — never use :latest in production."
+  type        = string
+  default     = "v0.1.0"
+}
